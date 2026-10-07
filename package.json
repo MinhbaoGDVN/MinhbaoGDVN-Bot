@@ -1,0 +1,14 @@
+{
+  "name": "minhbaogdvn-bot",
+  "version": "1.0.0",
+  "description": "Discord Bot chạy bằng Node.js",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0",
+    "dotenv": "^16.6.1"
+  }
+}
