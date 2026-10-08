@@ -57,7 +57,7 @@ client.on('debug', message => {
     const safeMessage = message
         .replaceAll(discordToken, '[REDACTED]')
         .slice(0, 2000);
-    if (/Preparing to connect|Fetched Gateway Information|Session Limit Information|Connecting to wss:\/\/gateway\.discord\.gg|Waiting for event (hello|ready)|Identifying|First heartbeat|Heartbeat acknowledged|Failed to connect to the gateway URL|Provided token:/.test(safeMessage)) {
+    if (/Preparing to connect|Fetched Gateway Information|Session Limit Information|Connecting to wss:\/\/gateway\.discord\.gg|Waiting for event (hello|ready)|Identifying|First heartbeat|Heartbeat acknowledged|Failed to connect to the gateway URL|Encountered unexpected 429 rate limit|Provided token:/.test(safeMessage)) {
         console.log(`[Discord debug] ${safeMessage}`);
     }
 });
@@ -68,14 +68,22 @@ client.on('error', error => {
 
 client.rest.on('response', (request, response) => {
     if (request.path.endsWith('/gateway/bot')) {
-        console.log(`[Discord REST] ${request.method.toUpperCase()} ${request.path} -> HTTP ${response.status} (attempt ${request.retries + 1})`);
+        const retryAfter = response.headers.get('retry-after');
+        const scope = response.headers.get('x-ratelimit-scope');
+        const global = response.headers.has('x-ratelimit-global');
+        console.log(
+            `[Discord REST] ${request.method.toUpperCase()} ${request.path} -> HTTP ${response.status} ` +
+            `(attempt ${request.retries + 1}${retryAfter ? `, retry after ${retryAfter}s` : ''}` +
+            `${scope ? `, scope ${scope}` : ''}${global ? ', global rate limit' : ''})`
+        );
     }
 });
 
 client.rest.on('rateLimited', rateLimit => {
-    if (rateLimit.route.endsWith('/gateway/bot')) {
-        console.warn(`[Discord REST] Gateway info rate-limited for ${Math.ceil(rateLimit.retryAfter)}ms.`);
-    }
+    console.warn(
+        `[Discord REST] Rate limit: ${rateLimit.method.toUpperCase()} ${rateLimit.route}; ` +
+        `retry after ${Math.ceil(rateLimit.retryAfter)}ms; scope=${rateLimit.scope}; global=${rateLimit.global}.`
+    );
 });
 
 client.on('warn', warning => {
