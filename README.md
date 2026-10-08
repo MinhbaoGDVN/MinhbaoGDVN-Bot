@@ -9,7 +9,7 @@ Discord bot và dashboard quản lý ticket viết bằng Node.js.
 3. Nhập `DISCORD_TOKEN` (token bot Discord) và `DASHBOARD_PASSWORD` (mật khẩu đăng nhập dashboard) khi Render yêu cầu. Nếu Blueprint không hỏi, thêm cả hai tại **Environment** của service.
 4. Deploy service. Mở URL Render để vào dashboard; endpoint `/health` được dùng cho health check.
 
-Ứng dụng yêu cầu Node.js 22 trở lên và kiểm tra hai biến môi trường bắt buộc ngay khi khởi động; thiếu cấu hình, service sẽ báo lỗi cụ thể thay vì chạy trong trạng thái hỏng. Không đưa token hoặc mật khẩu vào repository.
+Ứng dụng giới hạn runtime trong Node.js 24 LTS để Render không tự chọn Node.js 26. Máy local đã kiểm tra bằng Node.js 24.15.0, nên phiên bản này khớp cùng major với Render. Ứng dụng kiểm tra hai biến môi trường bắt buộc ngay khi khởi động; thiếu cấu hình, service sẽ báo lỗi cụ thể thay vì chạy trong trạng thái hỏng. Không đưa token hoặc mật khẩu vào repository.
 
 Cấu hình này dùng gói Free: Render có thể sleep service sau thời gian không có truy cập HTTP. Trong lúc service ngủ, bot sẽ offline và dashboard sẽ khởi động lại khi có truy cập HTTP; gói Free không đảm bảo bot online liên tục. Muốn bot online liên tục cần dùng instance luôn hoạt động trên Render.
 

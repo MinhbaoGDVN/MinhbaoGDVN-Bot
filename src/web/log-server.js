@@ -205,6 +205,8 @@ function createDashboardServer(client) {
                 if (url.pathname === '/api/status' && req.method === 'GET') {
                     return sendJSON(res, 200, {
                         ready: client.isReady(),
+                        loginState: client.loginState || (client.isReady() ? 'ready' : 'connecting'),
+                        loginError: client.loginError || null,
                         user: client.user?.tag || null,
                         guildAvailable: client.guilds.cache.has(TICKET_GUILD_ID),
                         ping: client.ws.ping,
@@ -566,14 +568,24 @@ function getDashboardHTML() {
             if (dashboardLoading) return;
             dashboardLoading = true;
             const error = $('dashboardError');
+            let discordLoginError = null;
             try {
                 const status = await request('/api/status');
+                discordLoginError = status.loginError;
                 $('statusDot').classList.toggle('live', status.ready && status.guildAvailable);
                 $('statusText').textContent = !status.ready
-                    ? 'Bot chưa kết nối Discord'
+                    ? status.loginState === 'failed'
+                        ? 'Đăng nhập Discord thất bại'
+                        : status.loginError
+                            ? 'Đang chờ Discord Gateway…'
+                            : 'Đang kết nối Discord…'
                     : !status.guildAvailable
                         ? 'Bot không thấy server ticket'
                         : 'Bot online · ping ' + status.ping + ' ms';
+                if (status.loginError) {
+                    error.textContent = 'Bot chưa đăng nhập Discord: ' + status.loginError + ' Kiểm tra DISCORD_TOKEN tại Environment trên Render rồi deploy lại.';
+                    error.classList.add('show');
+                }
                 dashboardSnapshotData = await request('/api/dashboard');
                 const { stats } = dashboardSnapshotData;
                 $('metricOpen').textContent = stats.open;
@@ -591,7 +603,8 @@ function getDashboardHTML() {
                 renderTickets();
                 error.classList.remove('show');
             } catch (requestError) {
-                error.textContent = requestError.message + ' Kiểm tra log và xác nhận bot đã vào đúng server, có quyền xem channel.';
+                error.textContent = (discordLoginError ? 'Trạng thái kết nối Discord: ' + discordLoginError + '. ' : '') +
+                    requestError.message + ' Kiểm tra DISCORD_TOKEN, bot đã vào đúng server và có quyền xem channel.';
                 error.classList.add('show');
                 if (!dashboardSnapshotData) {
                     $('metricOpen').textContent = '—';

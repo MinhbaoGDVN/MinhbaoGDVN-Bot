@@ -38,6 +38,8 @@ const client = new Client({
         GatewayIntentBits.Guilds
     ]
 });
+client.loginState = 'connecting';
+client.loginError = null;
 
 process.on('warning', warning => {
     console.warn('[Node warning]', warning.stack || warning.message);
@@ -56,18 +58,25 @@ client.on('warn', warning => {
 });
 
 client.on('shardError', (error, shardId) => {
+    client.loginState = 'failed';
+    client.loginError = error.message || String(error);
     console.error(`[Discord shard ${shardId} error]`, error);
 });
 
 client.on('shardDisconnect', (closeEvent, shardId) => {
+    client.loginState = 'connecting';
+    client.loginError = `Discord Gateway ngắt kết nối (code ${closeEvent.code}${closeEvent.reason ? `: ${closeEvent.reason}` : ''})`;
     console.warn(`[Discord shard ${shardId} disconnected] code=${closeEvent.code} reason=${closeEvent.reason || 'none'}`);
 });
 
 client.on('shardReconnecting', shardId => {
+    client.loginState = 'connecting';
     console.warn(`[Discord shard ${shardId}] reconnecting`);
 });
 
 client.on('shardReady', shardId => {
+    client.loginState = 'ready';
+    client.loginError = null;
     console.log(`[Discord shard ${shardId}] ready`);
 });
 
@@ -83,6 +92,8 @@ function isUnknownInteractionError(error) {
 }
 
 client.once('clientReady', async () => {
+    client.loginState = 'ready';
+    client.loginError = null;
     console.log(`Đã đăng nhập thành công với tên: ${client.user.tag}`);
     console.log(`Bot đã Online`)
     client.user.setPresence({
@@ -1479,6 +1490,24 @@ client.on('interactionCreate', async interaction => {
 
 const PORT = process.env.PORT || 8070;
 
-startLogServer(PORT, client);
+const webServer = startLogServer(PORT, client);
+console.log('[Startup] HTTP server đã mở; đang tải cấu hình ticket.');
 await loadTicketSettings();
-client.login(discordToken);
+console.log(`[Startup] Đã tải cấu hình ticket; bắt đầu đăng nhập Discord Gateway (Node ${process.version}, HTTP port ${PORT}).`);
+
+const loginWatchdog = setTimeout(() => {
+    if (client.isReady()) return;
+    client.loginState = 'connecting';
+    client.loginError = 'Chưa nhận được tín hiệu Discord Gateway sau 30 giây; đang tiếp tục thử kết nối.';
+    console.error(`[Startup] Discord Gateway chưa sẵn sàng sau 30 giây. Kiểm tra token và các sự kiện shard tiếp theo.`);
+}, 30_000);
+loginWatchdog.unref();
+
+try {
+    await client.login(discordToken);
+} catch (error) {
+    clearTimeout(loginWatchdog);
+    client.loginState = 'failed';
+    client.loginError = error.message || String(error);
+    console.error('[Startup] Đăng nhập Discord thất bại. Kiểm tra DISCORD_TOKEN trong Environment của Render:', error);
+}
