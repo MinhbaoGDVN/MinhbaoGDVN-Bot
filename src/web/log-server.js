@@ -103,8 +103,6 @@ function isAuthorized(req, suppliedPassword) {
 
 async function ticketOptions(client) {
     const guild = client.guilds.cache.get(TICKET_GUILD_ID) ?? await client.guilds.fetch(TICKET_GUILD_ID);
-    await guild.channels.fetch();
-    await guild.roles.fetch();
 
     return {
         channels: guild.channels.cache
@@ -124,7 +122,6 @@ async function ticketOptions(client) {
 
 async function dashboardSnapshot(client) {
     const guild = client.guilds.cache.get(TICKET_GUILD_ID) ?? await client.guilds.fetch(TICKET_GUILD_ID);
-    await guild.channels.fetch();
 
     const tickets = guild.channels.cache
         .filter(channel => channel.type === ChannelType.GuildText && /ticket-owner:\d+/.test(channel.topic || ''))
@@ -578,10 +575,14 @@ function getDashboardHTML() {
                 renderBreakdown(stats);
                 renderRecentActivity(dashboardSnapshotData.recentEvents);
                 renderTickets();
+                $('statusDot').classList.add('live');
+                $('statusText').textContent = 'Đã kết nối Discord';
                 error.classList.remove('show');
             } catch (requestError) {
                 error.textContent = requestError.message;
                 error.classList.add('show');
+                $('statusDot').classList.remove('live');
+                $('statusText').textContent = 'Không tải được dữ liệu';
             }
         }
 
@@ -688,18 +689,28 @@ function getDashboardHTML() {
         $('authForm').addEventListener('submit', async event => {
             event.preventDefault();
             const errorBox = $('authError');
+            const submitButton = $('authForm').querySelector('button[type="submit"]');
+            submitButton.disabled = true;
+            submitButton.textContent = 'Đang đăng nhập…';
+            errorBox.className = 'notice error';
             try {
                 const entered = $('password').value;
                 const response = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: entered }) });
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.error || 'Không đăng nhập được.');
                 password = entered;
-                await loadSettings();
                 $('authScreen').classList.add('hidden'); $('app').classList.remove('hidden');
-                $('statusDot').classList.add('live'); $('statusText').textContent = 'Đã kết nối Discord';
-                await loadDashboard();
+                $('statusDot').classList.remove('live'); $('statusText').textContent = 'Đang tải dữ liệu…';
+                loadSettings().catch(error => notice('Không tải được cấu hình ticket: ' + error.message, 'error'));
+                loadDashboard();
                 if (!dashboardRefreshTimer) dashboardRefreshTimer = setInterval(loadDashboard, 30000);
-            } catch (error) { errorBox.textContent = error.message; errorBox.className = 'notice show error'; }
+            } catch (error) {
+                errorBox.textContent = error.message;
+                errorBox.className = 'notice show error';
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Đăng nhập';
+            }
         });
 
         $('addQuestion').addEventListener('click', () => {
