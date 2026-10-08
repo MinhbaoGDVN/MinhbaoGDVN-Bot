@@ -1,12 +1,10 @@
 import http from 'http';
 import { timingSafeEqual } from 'crypto';
-import { format } from 'node:util';
 import { ChannelType } from 'discord.js';
 import { loadTicketSettings, saveTicketSettings } from '../ticket/ticket-settings.js';
 import { publishTicketPanel, TICKET_GUILD_ID } from '../ticket/ticket-handler.js';
 import { getTicketActivity } from '../ticket/ticket-activity.js';
 
-const MAX_LOGS = 1000;
 const logs = [];
 const clients = [];
 
@@ -16,14 +14,14 @@ const originalWarn = console.warn;
 
 function addLog(message, type = 'INFO') {
     const log = {
-        time: new Date().toISOString(),
+        time: new Date().toLocaleTimeString('vi-VN'),
         type,
         message: String(message)
     };
 
     logs.push(log);
 
-    if (logs.length > MAX_LOGS) {
+    if (logs.length > 200) {
         logs.shift();
     }
 
@@ -38,18 +36,38 @@ function addLog(message, type = 'INFO') {
     });
 }
 
+function formatConsoleArgs(args) {
+    return args
+        .map(arg => {
+            if (arg instanceof Error) {
+                return arg.stack || arg.message;
+            }
+
+            if (typeof arg === 'object' && arg !== null) {
+                try {
+                    return JSON.stringify(arg, null, 2);
+                } catch {
+                    return String(arg);
+                }
+            }
+
+            return String(arg);
+        })
+        .join(' ');
+}
+
 console.log = (...args) => {
-    addLog(format(...args), 'INFO');
+    addLog(formatConsoleArgs(args), 'INFO');
     originalLog(...args);
 };
 
 console.error = (...args) => {
-    addLog(format(...args), 'ERROR');
+    addLog(formatConsoleArgs(args), 'ERROR');
     originalError(...args);
 };
 
 console.warn = (...args) => {
-    addLog(format(...args), 'WARN');
+    addLog(formatConsoleArgs(args), 'WARN');
     originalWarn(...args);
 };
 
@@ -202,22 +220,6 @@ function createDashboardServer(client) {
                 if (url.pathname === '/api/dashboard' && req.method === 'GET') {
                     return sendJSON(res, 200, await dashboardSnapshot(client));
                 }
-                if (url.pathname === '/api/status' && req.method === 'GET') {
-                    return sendJSON(res, 200, {
-                        ready: client.isReady(),
-                        loginState: client.loginState || (client.isReady() ? 'ready' : 'connecting'),
-                        loginError: client.loginError || null,
-                        user: client.user?.tag || null,
-                        gatewayStatus: client.ws.status,
-                        shards: [...client.ws.shards.values()].map(shard => ({
-                            id: shard.id,
-                            status: shard.status
-                        })),
-                        guildAvailable: client.guilds.cache.has(TICKET_GUILD_ID),
-                        ping: client.ws.ping,
-                        uptime: process.uptime()
-                    });
-                }
                 if (url.pathname === '/api/ticket-panel' && req.method === 'POST') {
                     return sendJSON(res, 200, await publishTicketPanel(client, await readJSONBody(req)));
                 }
@@ -230,18 +232,11 @@ function createDashboardServer(client) {
         }
 
         if (url.pathname === '/logs' && req.method === 'GET') {
-            if (!process.env.DASHBOARD_PASSWORD) {
-                return sendJSON(res, 503, { error: 'Chưa cấu hình DASHBOARD_PASSWORD.' });
-            }
-            if (!isAuthorized(req, req.headers['x-dashboard-password'])) {
-                return sendJSON(res, 401, { error: 'Cần đăng nhập để xem nhật ký.' });
-            }
-
             res.writeHead(200, {
                 'Content-Type': 'text/event-stream; charset=utf-8',
-                'Cache-Control': 'no-cache, no-transform',
+                'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no'
+                'Access-Control-Allow-Origin': '*'
             });
 
             clients.push(res);
@@ -250,15 +245,13 @@ function createDashboardServer(client) {
                 res.write(`data: ${JSON.stringify(log)}\n\n`);
             }
 
-            const removeClient = () => {
+            req.on('close', () => {
                 const index = clients.indexOf(res);
 
                 if (index !== -1) {
                     clients.splice(index, 1);
                 }
-            };
-            res.on('close', removeClient);
-            res.on('error', removeClient);
+            });
 
             return;
         }
@@ -369,7 +362,6 @@ function getDashboardHTML() {
             </section>
             <section id="controlsView" class="view">
                 <div id="notice" class="notice"></div>
-                <div id="settingsError" class="notice error dashboard-error"></div>
                 <div class="layout">
                     <div class="column">
                         <section class="section">
@@ -427,7 +419,7 @@ function getDashboardHTML() {
                 </div>
                 <div class="actions"><button id="saveButton" class="button" type="button">Lưu cài đặt</button><button id="publishButton" class="button primary" type="button">Lưu & cập nhật panel</button></div>
             </section>
-            <section id="logsView" class="view"><div class="dashboard-toolbar"><small id="logStatus">Nhật ký được giữ trong bộ nhớ của phiên chạy hiện tại.</small><button id="clearLogs" class="button" type="button">Xóa màn hình</button></div><div id="logs"></div></section>
+            <section id="logsView" class="view"><div id="logs"></div></section>
         </main>
     </div>
     <script>
@@ -435,22 +427,18 @@ function getDashboardHTML() {
         const $ = id => document.getElementById(id);
         let password = '';
         let settings;
-        let logController;
+        let eventSource;
         let questionData = [];
         let activeMode = 'modal';
         let logCount = 0;
         let dashboardSnapshotData;
         let dashboardRefreshTimer;
-        let dashboardLoading = false;
 
         async function request(path, method = 'GET', body) {
             const headers = { 'x-dashboard-password': password };
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             const response = await fetch(path, { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
-            const text = await response.text();
-            let data;
-            try { data = text ? JSON.parse(text) : {}; }
-            catch { throw new Error('Server trả về phản hồi không hợp lệ (HTTP ' + response.status + ').'); }
+            const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Yêu cầu thất bại.');
             return data;
         }
@@ -570,27 +558,8 @@ function getDashboardHTML() {
         }
 
         async function loadDashboard() {
-            if (dashboardLoading) return;
-            dashboardLoading = true;
             const error = $('dashboardError');
-            let discordLoginError = null;
             try {
-                const status = await request('/api/status');
-                discordLoginError = status.loginError;
-                $('statusDot').classList.toggle('live', status.ready && status.guildAvailable);
-                $('statusText').textContent = !status.ready
-                    ? status.loginState === 'failed'
-                        ? 'Đăng nhập Discord thất bại'
-                        : status.loginError
-                            ? 'Đang chờ Discord Gateway…'
-                            : 'Đang kết nối Discord…'
-                    : !status.guildAvailable
-                        ? 'Bot không thấy server ticket'
-                        : 'Bot online · ping ' + status.ping + ' ms';
-                if (status.loginError) {
-                    error.textContent = 'Bot chưa đăng nhập Discord: ' + status.loginError + ' Kiểm tra DISCORD_TOKEN tại Environment trên Render rồi deploy lại.';
-                    error.classList.add('show');
-                }
                 dashboardSnapshotData = await request('/api/dashboard');
                 const { stats } = dashboardSnapshotData;
                 $('metricOpen').textContent = stats.open;
@@ -606,19 +575,14 @@ function getDashboardHTML() {
                 renderBreakdown(stats);
                 renderRecentActivity(dashboardSnapshotData.recentEvents);
                 renderTickets();
+                $('statusDot').classList.add('live');
+                $('statusText').textContent = 'Đã kết nối Discord';
                 error.classList.remove('show');
             } catch (requestError) {
-                error.textContent = (discordLoginError ? 'Trạng thái kết nối Discord: ' + discordLoginError + '. ' : '') +
-                    requestError.message + ' Kiểm tra DISCORD_TOKEN, bot đã vào đúng server và có quyền xem channel.';
+                error.textContent = requestError.message;
                 error.classList.add('show');
-                if (!dashboardSnapshotData) {
-                    $('metricOpen').textContent = '—';
-                    $('metricAI').textContent = '—';
-                    $('metricModerator').textContent = '—';
-                    $('metricEvents').textContent = '—';
-                }
-            } finally {
-                dashboardLoading = false;
+                $('statusDot').classList.remove('live');
+                $('statusText').textContent = 'Không tải được dữ liệu';
             }
         }
 
@@ -691,28 +655,20 @@ function getDashboardHTML() {
         }
 
         async function loadSettings() {
-            const error = $('settingsError');
-            try {
-                const [saved, options] = await Promise.all([request('/api/ticket-settings'), request('/api/ticket-options')]);
-                settings = saved;
-                for (const key of fields) $(key).value = saved[key];
-                setOptions('panelChannelId', options.channels, saved.panelChannelId, 'Chọn text channel');
-                setOptions('transcriptChannelId', options.channels, saved.transcriptChannelId, 'Giữ transcript trong ticket');
-                setOptions('categoryId', options.categories, saved.categoryId, 'Không dùng category');
-                setOptions('staffRoleId', options.roles, saved.staffRoleId, 'Chọn moderator role');
-                $('formEnabled').checked = saved.formEnabled;
-                activeMode = saved.formMode;
-                document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('selected', button.dataset.mode === activeMode));
-                questionData = saved.formQuestions.map(question => ({ ...question }));
-                $('guildId').textContent = saved.guildId;
-                $('colorPicker').value = saved.color;
-                renderQuestions(); updatePreview();
-                error.classList.remove('show');
-            } catch (loadError) {
-                error.textContent = 'Không tải được cài đặt: ' + loadError.message + ' Hãy kiểm tra bot đã vào server ticket và có quyền xem channel/role.';
-                error.classList.add('show');
-                throw loadError;
-            }
+            const [saved, options] = await Promise.all([request('/api/ticket-settings'), request('/api/ticket-options')]);
+            settings = saved;
+            for (const key of fields) $(key).value = saved[key];
+            setOptions('panelChannelId', options.channels, saved.panelChannelId, 'Chọn text channel');
+            setOptions('transcriptChannelId', options.channels, saved.transcriptChannelId, 'Giữ transcript trong ticket');
+            setOptions('categoryId', options.categories, saved.categoryId, 'Không dùng category');
+            setOptions('staffRoleId', options.roles, saved.staffRoleId, 'Chọn moderator role');
+            $('formEnabled').checked = saved.formEnabled;
+            activeMode = saved.formMode;
+            document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('selected', button.dataset.mode === activeMode));
+            questionData = saved.formQuestions.map(question => ({ ...question }));
+            $('guildId').textContent = saved.guildId;
+            $('colorPicker').value = saved.color;
+            renderQuestions(); updatePreview();
         }
 
         async function save(publish) {
@@ -745,7 +701,7 @@ function getDashboardHTML() {
                 password = entered;
                 $('authScreen').classList.add('hidden'); $('app').classList.remove('hidden');
                 $('statusDot').classList.remove('live'); $('statusText').textContent = 'Đang tải dữ liệu…';
-                loadSettings().catch(() => {});
+                loadSettings().catch(error => notice('Không tải được cấu hình ticket: ' + error.message, 'error'));
                 loadDashboard();
                 if (!dashboardRefreshTimer) dashboardRefreshTimer = setInterval(loadDashboard, 30000);
             } catch (error) {
@@ -773,7 +729,6 @@ function getDashboardHTML() {
         $('publishButton').addEventListener('click', () => save(true));
         $('refreshDashboard').addEventListener('click', loadDashboard);
         document.querySelectorAll('[data-refresh-dashboard]').forEach(button => button.addEventListener('click', loadDashboard));
-        $('clearLogs').addEventListener('click', () => { $('logs').replaceChildren(); logCount = 0; });
         $('ticketSearch').addEventListener('input', renderTickets);
         $('ticketFilter').addEventListener('change', renderTickets);
 
@@ -792,70 +747,20 @@ function getDashboardHTML() {
             $('pageSubtitle').textContent = views[view][1];
             if (view === 'analytics' || view === 'data') loadDashboard();
             const showLogs = view === 'logs';
-            if (showLogs) connectLogs();
-            else if (logController) {
-                logController.abort();
-                logController = null;
-                $('logStatus').textContent = 'Nhật ký tạm dừng.';
-            }
+            if (showLogs && !eventSource) connectLogs();
         }));
 
         function connectLogs() {
-            if (logController) return;
-            const controller = new AbortController();
-            logController = controller;
-            readLogs(controller.signal).finally(() => {
-                if (logController === controller) logController = null;
-            });
-        }
-
-        function appendLog(log) {
-            const row = document.createElement('div'); row.className = 'log';
-            const time = document.createElement('span'); time.className = 'time';
-            time.textContent = '[' + new Date(log.time).toLocaleString('vi-VN') + '] ';
-            const type = document.createElement('span'); type.className = String(log.type).toLowerCase();
-            type.textContent = '[' + log.type + '] ';
-            row.append(time, type, document.createTextNode(log.message));
-            $('logs').append(row);
-            if (++logCount > 1000) { $('logs').firstElementChild?.remove(); logCount--; }
-        }
-
-        async function readLogs(signal) {
-            const wait = milliseconds => new Promise(resolve => {
-                const timer = setTimeout(resolve, milliseconds);
-                signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
-            });
-            while (!signal.aborted) {
-                try {
-                    const response = await fetch('/logs', { headers: { 'x-dashboard-password': password }, signal });
-                    if (!response.ok) {
-                        const text = await response.text();
-                        let message = text;
-                        try { message = JSON.parse(text).error || text; } catch {}
-                        throw new Error(message || 'HTTP ' + response.status);
-                    }
-                    if (!response.body) throw new Error('Trình duyệt không hỗ trợ đọc nhật ký trực tiếp.');
-                    $('logStatus').textContent = 'Đang nhận nhật ký trực tiếp · tối đa 1.000 dòng trên màn hình.';
-                    const reader = response.body.getReader();
-                    const decoder = new TextDecoder();
-                    let buffer = '';
-                    while (!signal.aborted) {
-                        const { value, done } = await reader.read();
-                        if (done) break;
-                        buffer += decoder.decode(value, { stream: true });
-                        const messages = buffer.split('\\n\\n');
-                        buffer = messages.pop();
-                        for (const message of messages) {
-                            const data = message.split('\\n').find(line => line.startsWith('data: '));
-                            if (data) appendLog(JSON.parse(data.slice(6)));
-                        }
-                    }
-                } catch (error) {
-                    if (signal.aborted) break;
-                    $('logStatus').textContent = 'Mất kết nối nhật ký (' + error.message + '); đang thử lại…';
-                }
-                if (!signal.aborted) await wait(3000);
-            }
+            eventSource = new EventSource('/logs');
+            eventSource.onmessage = event => {
+                const log = JSON.parse(event.data); const row = document.createElement('div'); row.className = 'log';
+                const time = document.createElement('span'); time.className = 'time'; time.textContent = '[' + log.time + '] ';
+                const type = document.createElement('span'); type.className = log.type.toLowerCase(); type.textContent = '[' + log.type + '] ';
+                row.append(time, type, document.createTextNode(log.message)); $('logs').append(row);
+                if (++logCount > 500) { $('logs').firstElementChild.remove(); logCount--; }
+            };
+            eventSource.onopen = () => { $('statusDot').classList.add('live'); $('statusText').textContent = 'Đã kết nối Discord'; };
+            eventSource.onerror = () => { $('statusDot').classList.remove('live'); $('statusText').textContent = 'Mất kết nối log'; };
         }
     </script>
 </body>

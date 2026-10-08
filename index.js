@@ -1,5 +1,3 @@
-import 'dotenv/config';
-
 import {
     Client,
     GatewayIntentBits,
@@ -20,97 +18,17 @@ import {
     MessageFlags
 } from 'discord.js';
 
+import dotenv from 'dotenv';
 import { startLogServer } from './src/web/log-server.js';
 import { createTicketCommand, handleTicketInteraction } from './src/ticket/ticket-handler.js';
 import { loadTicketSettings } from './src/ticket/ticket-settings.js';
 
-const discordToken = process.env.DISCORD_TOKEN?.trim();
-if (!discordToken) {
-    throw new Error('Thiếu DISCORD_TOKEN. Hãy cấu hình biến môi trường này trên Render hoặc trong file .env.');
-}
-
-if (!process.env.DASHBOARD_PASSWORD?.trim()) {
-    throw new Error('Thiếu DASHBOARD_PASSWORD. Hãy cấu hình biến môi trường này trên Render hoặc trong file .env.');
-}
+dotenv.config();
 
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds
-    ],
-    rest: {
-        timeout: 10_000,
-        retries: 1
-    }
-});
-client.loginState = 'connecting';
-client.loginError = null;
-
-process.on('warning', warning => {
-    console.warn('[Node warning]', warning.stack || warning.message);
-});
-
-process.on('uncaughtExceptionMonitor', (error, origin) => {
-    console.error(`[Node ${origin}]`, error);
-});
-
-client.on('debug', message => {
-    const safeMessage = message
-        .replaceAll(discordToken, '[REDACTED]')
-        .slice(0, 2000);
-    if (/Preparing to connect|Fetched Gateway Information|Session Limit Information|Connecting to wss:\/\/gateway\.discord\.gg|Waiting for event (hello|ready)|Identifying|First heartbeat|Heartbeat acknowledged|Failed to connect to the gateway URL|Encountered unexpected 429 rate limit|Provided token:/.test(safeMessage)) {
-        console.log(`[Discord debug] ${safeMessage}`);
-    }
-});
-
-client.on('error', error => {
-    console.error('[Discord client error]', error);
-});
-
-client.rest.on('response', (request, response) => {
-    if (request.path.endsWith('/gateway/bot')) {
-        const retryAfter = response.headers.get('retry-after');
-        const scope = response.headers.get('x-ratelimit-scope');
-        const global = response.headers.has('x-ratelimit-global');
-        console.log(
-            `[Discord REST] ${request.method.toUpperCase()} ${request.path} -> HTTP ${response.status} ` +
-            `(attempt ${request.retries + 1}${retryAfter ? `, retry after ${retryAfter}s` : ''}` +
-            `${scope ? `, scope ${scope}` : ''}${global ? ', global rate limit' : ''})`
-        );
-    }
-});
-
-client.rest.on('rateLimited', rateLimit => {
-    console.warn(
-        `[Discord REST] Rate limit: ${rateLimit.method.toUpperCase()} ${rateLimit.route}; ` +
-        `retry after ${Math.ceil(rateLimit.retryAfter)}ms; scope=${rateLimit.scope}; global=${rateLimit.global}.`
-    );
-});
-
-client.on('warn', warning => {
-    console.warn('[Discord warning]', warning);
-});
-
-client.on('shardError', (error, shardId) => {
-    client.loginState = 'failed';
-    client.loginError = error.message || String(error);
-    console.error(`[Discord shard ${shardId} error]`, error);
-});
-
-client.on('shardDisconnect', (closeEvent, shardId) => {
-    client.loginState = 'connecting';
-    client.loginError = `Discord Gateway ngắt kết nối (code ${closeEvent.code}${closeEvent.reason ? `: ${closeEvent.reason}` : ''})`;
-    console.warn(`[Discord shard ${shardId} disconnected] code=${closeEvent.code} reason=${closeEvent.reason || 'none'}`);
-});
-
-client.on('shardReconnecting', shardId => {
-    client.loginState = 'connecting';
-    console.warn(`[Discord shard ${shardId}] reconnecting`);
-});
-
-client.on('shardReady', shardId => {
-    client.loginState = 'ready';
-    client.loginError = null;
-    console.log(`[Discord shard ${shardId}] ready`);
+    ]
 });
 
 let lastBotMessageId = null;
@@ -125,8 +43,6 @@ function isUnknownInteractionError(error) {
 }
 
 client.once('clientReady', async () => {
-    client.loginState = 'ready';
-    client.loginError = null;
     console.log(`Đã đăng nhập thành công với tên: ${client.user.tag}`);
     console.log(`Bot đã Online`)
     client.user.setPresence({
@@ -172,7 +88,7 @@ client.once('clientReady', async () => {
         createTicketCommand()
     ];
 
-    const rest = new REST({ version: '10' }).setToken(discordToken);
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
         console.log('Đang đăng ký lệnh...');
         await rest.put(
@@ -1299,11 +1215,6 @@ async function handleEmbedInteraction(interaction) {
 }
 
 client.on('interactionCreate', async interaction => {
-    const action = interaction.isChatInputCommand()
-        ? `/${interaction.commandName}`
-        : interaction.customId || `type ${interaction.type}`;
-    console.log(`[Discord interaction] ${action} by ${interaction.user?.tag || interaction.user?.id || 'unknown'} (${interaction.user?.id || 'unknown'}) in ${interaction.guildId || 'DM'}`);
-
     try {
         if (await handleTicketInteraction(interaction, client)) return;
 
@@ -1523,24 +1434,6 @@ client.on('interactionCreate', async interaction => {
 
 const PORT = process.env.PORT || 8070;
 
-const webServer = startLogServer(PORT, client);
-console.log('[Startup] HTTP server đã mở; đang tải cấu hình ticket.');
+startLogServer(PORT, client);
 await loadTicketSettings();
-console.log(`[Startup] Đã tải cấu hình ticket; bắt đầu đăng nhập Discord Gateway (Node ${process.version}, HTTP port ${PORT}).`);
-
-const loginWatchdog = setTimeout(() => {
-    if (client.isReady()) return;
-    client.loginState = 'connecting';
-    client.loginError = 'Chưa nhận được tín hiệu Discord Gateway sau 30 giây; đang tiếp tục thử kết nối.';
-    console.error(`[Startup] Discord Gateway chưa sẵn sàng sau 30 giây. Kiểm tra token và các sự kiện shard tiếp theo.`);
-}, 30_000);
-loginWatchdog.unref();
-
-try {
-    await client.login(discordToken);
-} catch (error) {
-    clearTimeout(loginWatchdog);
-    client.loginState = 'failed';
-    client.loginError = error.message || String(error);
-    console.error('[Startup] Đăng nhập Discord thất bại. Kiểm tra DISCORD_TOKEN trong Environment của Render:', error);
-}
+client.login(process.env.DISCORD_TOKEN);
