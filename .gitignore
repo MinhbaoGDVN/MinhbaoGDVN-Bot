@@ -1,4 +1,6 @@
 node_modules/
 .env
+.env.*
+!.env.example
+ticket-settings.json.*.tmp
 .DS_Store
-README.md

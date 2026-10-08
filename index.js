@@ -1,3 +1,5 @@
+import 'dotenv/config';
+
 import {
     Client,
     GatewayIntentBits,
@@ -18,12 +20,18 @@ import {
     MessageFlags
 } from 'discord.js';
 
-import dotenv from 'dotenv';
 import { startLogServer } from './src/web/log-server.js';
 import { createTicketCommand, handleTicketInteraction } from './src/ticket/ticket-handler.js';
 import { loadTicketSettings } from './src/ticket/ticket-settings.js';
 
-dotenv.config();
+const discordToken = process.env.DISCORD_TOKEN?.trim();
+if (!discordToken) {
+    throw new Error('Thiếu DISCORD_TOKEN. Hãy cấu hình biến môi trường này trên Render hoặc trong file .env.');
+}
+
+if (!process.env.DASHBOARD_PASSWORD?.trim()) {
+    throw new Error('Thiếu DASHBOARD_PASSWORD. Hãy cấu hình biến môi trường này trên Render hoặc trong file .env.');
+}
 
 const client = new Client({
     intents: [
@@ -88,7 +96,7 @@ client.once('clientReady', async () => {
         createTicketCommand()
     ];
 
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    const rest = new REST({ version: '10' }).setToken(discordToken);
     try {
         console.log('Đang đăng ký lệnh...');
         await rest.put(
@@ -1436,4 +1444,4 @@ const PORT = process.env.PORT || 8070;
 
 startLogServer(PORT, client);
 await loadTicketSettings();
-client.login(process.env.DISCORD_TOKEN);
+client.login(discordToken);

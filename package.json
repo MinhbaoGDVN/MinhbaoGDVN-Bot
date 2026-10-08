@@ -4,6 +4,9 @@
   "description": "Discord Bot chạy bằng Node.js",
   "main": "index.js",
   "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "start": "node index.js"
   },
