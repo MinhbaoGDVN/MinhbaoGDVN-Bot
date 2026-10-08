@@ -36,7 +36,11 @@ if (!process.env.DASHBOARD_PASSWORD?.trim()) {
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds
-    ]
+    ],
+    rest: {
+        timeout: 10_000,
+        retries: 1
+    }
 });
 client.loginState = 'connecting';
 client.loginError = null;
@@ -60,6 +64,18 @@ client.on('debug', message => {
 
 client.on('error', error => {
     console.error('[Discord client error]', error);
+});
+
+client.rest.on('response', (request, response) => {
+    if (request.path.endsWith('/gateway/bot')) {
+        console.log(`[Discord REST] ${request.method.toUpperCase()} ${request.path} -> HTTP ${response.status} (attempt ${request.retries + 1})`);
+    }
+});
+
+client.rest.on('rateLimited', rateLimit => {
+    if (rateLimit.route.endsWith('/gateway/bot')) {
+        console.warn(`[Discord REST] Gateway info rate-limited for ${Math.ceil(rateLimit.retryAfter)}ms.`);
+    }
 });
 
 client.on('warn', warning => {
