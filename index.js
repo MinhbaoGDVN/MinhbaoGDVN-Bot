@@ -39,6 +39,38 @@ const client = new Client({
     ]
 });
 
+process.on('warning', warning => {
+    console.warn('[Node warning]', warning.stack || warning.message);
+});
+
+process.on('uncaughtExceptionMonitor', (error, origin) => {
+    console.error(`[Node ${origin}]`, error);
+});
+
+client.on('error', error => {
+    console.error('[Discord client error]', error);
+});
+
+client.on('warn', warning => {
+    console.warn('[Discord warning]', warning);
+});
+
+client.on('shardError', (error, shardId) => {
+    console.error(`[Discord shard ${shardId} error]`, error);
+});
+
+client.on('shardDisconnect', (closeEvent, shardId) => {
+    console.warn(`[Discord shard ${shardId} disconnected] code=${closeEvent.code} reason=${closeEvent.reason || 'none'}`);
+});
+
+client.on('shardReconnecting', shardId => {
+    console.warn(`[Discord shard ${shardId}] reconnecting`);
+});
+
+client.on('shardReady', shardId => {
+    console.log(`[Discord shard ${shardId}] ready`);
+});
+
 let lastBotMessageId = null;
 
 const embedSessions = new Map();
@@ -1223,6 +1255,11 @@ async function handleEmbedInteraction(interaction) {
 }
 
 client.on('interactionCreate', async interaction => {
+    const action = interaction.isChatInputCommand()
+        ? `/${interaction.commandName}`
+        : interaction.customId || `type ${interaction.type}`;
+    console.log(`[Discord interaction] ${action} by ${interaction.user?.tag || interaction.user?.id || 'unknown'} (${interaction.user?.id || 'unknown'}) in ${interaction.guildId || 'DM'}`);
+
     try {
         if (await handleTicketInteraction(interaction, client)) return;
 

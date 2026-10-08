@@ -15,6 +15,8 @@ Cấu hình này dùng gói Free: Render có thể sleep service sau thời gian
 
 Filesystem của service Free không bền vững qua lần deploy/restart. Cấu hình ticket lưu bằng `ticket-settings.json` có thể bị mất và trở về mặc định sau đó. Để giữ cấu hình, cần chuyển sang dịch vụ có persistent disk trên Render, mount disk (ví dụ tại `/var/data`) và đặt biến `TICKET_SETTINGS_FILE=/var/data/ticket-settings.json`.
 
+Dashboard hiển thị trạng thái kết nối Discord, lỗi/kết nối lại shard và tối đa 1.000 dòng log mới nhất trong phiên chạy hiện tại. Nhật ký trên dashboard nằm trong bộ nhớ và sẽ mất khi service restart hoặc thức dậy; để xem log qua nhiều lần khởi động, dùng tab **Logs** của service trên Render. Endpoint `/health` chỉ kiểm tra web service; trạng thái Discord được hiển thị riêng trong dashboard.
+
 ## Chạy cục bộ
 
 ```sh
