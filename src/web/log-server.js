@@ -184,6 +184,10 @@ function createDashboardServer(client) {
     return http.createServer(async (req, res) => {
         const url = new URL(req.url, 'http://localhost');
 
+        if (url.pathname === '/health' && req.method === 'GET') {
+            return sendJSON(res, 200, { status: 'ok' });
+        }
+
         if (url.pathname === '/api/auth' && req.method === 'POST') {
             try {
                 const body = await readJSONBody(req);
