@@ -1,0 +1,36 @@
+{
+  "guildId": "1518264520785527004",
+  "serverName": "Cộng Đồng Cục Đất Bell Việt Nam",
+  "panelChannelId": "1554505696077160458",
+  "panelMessageId": "1555170953573695550",
+  "categoryId": "1518445378914222150",
+  "staffRoleId": "1536370009532665947",
+  "transcriptChannelId": "1555758448736468992",
+  "panelTitle": "Trung tâm hỗ trợ",
+  "panelDescription": "Bạn cần trợ giúp? Chọn trao đổi riêng với moderator hoặc nhận hỗ trợ nhanh từ AI.\n\nLưu ý: Không ping bot khác, chat nhiều lần, ping admin. Hãy chờ đợi nhé!",
+  "panelButtonLabel": "Mở yêu cầu hỗ trợ",
+  "panelButtonEmoji": "🎫",
+  "color": "#FF0000",
+  "ticketTitle": "Yêu cầu hỗ trợ",
+  "ticketIntro": "Cảm ơn bạn đã liên hệ. Hãy gửi mô tả rõ ràng và đính kèm thông tin cần thiết.\nLưu ý: Không ping bot khác, chat nhiều lần, ping admin. Hãy chờ đợi nhé!",
+  "formEnabled": false,
+  "formMode": "modal",
+  "formTitle": "Thông tin hỗ trợ",
+  "formQuestions": [
+    {
+      "label": "Vấn đề là gì?",
+      "placeholder": "Hãy ghi vấn đề của bạn.",
+      "required": true
+    },
+    {
+      "label": "Bạn có cần gấp không?",
+      "placeholder": "Yes / No",
+      "required": true
+    },
+    {
+      "label": "Bạn có muốn người khác nhắn vô không?",
+      "placeholder": "Mod khác sẽ nhắn vào ticket của bạn. Nói Có / Không",
+      "required": true
+    }
+  ]
+}
