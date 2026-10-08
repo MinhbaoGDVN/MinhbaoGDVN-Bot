@@ -17,6 +17,8 @@ Filesystem của service Free không bền vững qua lần deploy/restart. Cấ
 
 Dashboard hiển thị trạng thái kết nối Discord, lỗi/kết nối lại shard và tối đa 1.000 dòng log mới nhất trong phiên chạy hiện tại. Nhật ký trên dashboard nằm trong bộ nhớ và sẽ mất khi service restart hoặc thức dậy; để xem log qua nhiều lần khởi động, dùng tab **Logs** của service trên Render. Endpoint `/health` chỉ kiểm tra web service; trạng thái Discord được hiển thị riêng trong dashboard.
 
+Nếu log dừng ở bước mở cổng HTTP, tìm các dòng `[Startup]` và `[Discord debug]` tiếp theo trong tab **Logs**. Chúng phân biệt lỗi tải cấu hình, lấy thông tin Discord Gateway, mở WebSocket và nhận tín hiệu sẵn sàng; không gửi `DISCORD_TOKEN` vào log hoặc chia sẻ công khai.
+
 ## Chạy cục bộ
 
 ```sh

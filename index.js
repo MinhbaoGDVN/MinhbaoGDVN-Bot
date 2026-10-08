@@ -49,6 +49,15 @@ process.on('uncaughtExceptionMonitor', (error, origin) => {
     console.error(`[Node ${origin}]`, error);
 });
 
+client.on('debug', message => {
+    const safeMessage = message
+        .replaceAll(discordToken, '[REDACTED]')
+        .slice(0, 2000);
+    if (/Preparing to connect|Fetched Gateway Information|Session Limit Information|Connecting to wss:\/\/gateway\.discord\.gg|Waiting for event (hello|ready)|Identifying|First heartbeat|Heartbeat acknowledged|Failed to connect to the gateway URL|Provided token:/.test(safeMessage)) {
+        console.log(`[Discord debug] ${safeMessage}`);
+    }
+});
+
 client.on('error', error => {
     console.error('[Discord client error]', error);
 });

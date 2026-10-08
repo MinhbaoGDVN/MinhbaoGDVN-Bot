@@ -208,6 +208,11 @@ function createDashboardServer(client) {
                         loginState: client.loginState || (client.isReady() ? 'ready' : 'connecting'),
                         loginError: client.loginError || null,
                         user: client.user?.tag || null,
+                        gatewayStatus: client.ws.status,
+                        shards: [...client.ws.shards.values()].map(shard => ({
+                            id: shard.id,
+                            status: shard.status
+                        })),
                         guildAvailable: client.guilds.cache.has(TICKET_GUILD_ID),
                         ping: client.ws.ping,
                         uptime: process.uptime()
